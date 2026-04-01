@@ -25,6 +25,30 @@ let lastResolveData = null;
 let mediaMode = "original";
 let thumbBlobUrl = null;
 
+/** 从整段分享文案中提取首个 http(s) 链接（去掉末尾标点、括号等） */
+function extractHttpUrlFromText(text) {
+  if (!text || typeof text !== "string") return "";
+  const raw = text.trim();
+  if (!raw) return "";
+  const re = /https?:\/\/[^\s\u3000]+/gi;
+  const matches = raw.match(re);
+  if (!matches || !matches.length) return raw;
+  let url = matches.reduce((a, b) => (b.length > a.length ? b : a));
+  const punct = "，。！？、；;．";
+  const brackets = "】」』）)\"'";
+  for (;;) {
+    let next = url.replace(new RegExp(`[${punct}]+$`, "u"), "");
+    while (next.length) {
+      const ch = next[next.length - 1];
+      if (brackets.includes(ch) || ch === "]" || ch === ")") next = next.slice(0, -1);
+      else break;
+    }
+    if (next === url) break;
+    url = next;
+  }
+  return url.trim();
+}
+
 function humanFilesizeMB(bytes) {
   const n = Number(bytes);
   if (!Number.isFinite(n) || n <= 0) return "—";
@@ -239,8 +263,40 @@ function fillFormats(formats) {
   updateSizeDisplays();
 }
 
+if (input) {
+  input.addEventListener("focus", () => {
+    requestAnimationFrame(() => {
+      if (input.value) input.select();
+    });
+  });
+
+  input.addEventListener("paste", (e) => {
+    const text = e.clipboardData?.getData("text/plain") || "";
+    if (!text) return;
+    const extracted = extractHttpUrlFromText(text);
+    if (!/^https?:\/\//i.test(extracted)) return;
+    const clip = text.trim();
+    if (extracted === clip) return;
+    e.preventDefault();
+    const s = input.selectionStart ?? 0;
+    const end = input.selectionEnd ?? 0;
+    input.value = `${input.value.slice(0, s)}${extracted}${input.value.slice(end)}`;
+    const pos = s + extracted.length;
+    requestAnimationFrame(() => input.setSelectionRange(pos, pos));
+  });
+
+  input.addEventListener("blur", () => {
+    const v = input.value.trim();
+    if (!v) return;
+    const x = extractHttpUrlFromText(v);
+    if (x && x !== v && /^https?:\/\//i.test(x)) input.value = x;
+  });
+}
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
+  const cleaned = extractHttpUrlFromText(input.value.trim());
+  if (cleaned) input.value = cleaned;
   const url = input.value.trim();
   if (!url) return;
   setHint("正在解析，请稍候…");

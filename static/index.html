@@ -46,12 +46,13 @@
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
           <input
-            type="url"
+            type="text"
             name="url"
             id="input-url"
             class="search-input"
-            placeholder="粘贴视频链接…"
-            autocomplete="off"
+            placeholder="粘贴视频链接…（可含标题，会自动提取链接）"
+            autocomplete="url"
+            inputmode="url"
             required
           />
           <button type="submit" class="search-btn" id="btn-resolve">
@@ -193,6 +194,6 @@
       </div>
     </aside>
 
-    <script src="/app.js?v=13" type="module"></script>
+    <script src="/app.js?v=14" type="module"></script>
   </body>
 </html>
