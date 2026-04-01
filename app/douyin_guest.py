@@ -195,7 +195,10 @@ def fetch_guest_cookie_file(video_page_url: str, out_path: Path) -> bool:
 
 
 def merge_netscape_cookie_files(primary: Path, secondary: Path, out_path: Path) -> None:
-    """合并两个 Netscape cookies.txt，同名同域以 primary 为准。"""
+    """合并两个 Netscape cookies.txt，同名同域以先出现的为准（primary 优先）。
+
+    抖音场景下应对 primary=访客、secondary=用户文件，避免 cookies.txt 里过期的 s_v_web_id 覆盖刚拉取的访客态。
+    """
     def data_lines(p: Path) -> list[str]:
         if not p.is_file():
             return []

@@ -43,8 +43,16 @@ def playwright_douyin_cookie_lines(video_page_url: str) -> list[str]:
             )
             page = ctx.new_page()
             page.goto("https://www.douyin.com/", wait_until="domcontentloaded", timeout=35000)
-            page.goto(video_page_url.strip(), wait_until="domcontentloaded", timeout=45000)
-            page.wait_for_timeout(4500)
+            page.goto(video_page_url.strip(), wait_until="load", timeout=45000)
+            try:
+                page.wait_for_load_state("networkidle", timeout=12000)
+            except Exception:
+                pass
+            try:
+                page.evaluate("window.scrollTo(0, Math.min(600, document.body.scrollHeight || 600))")
+            except Exception:
+                pass
+            page.wait_for_timeout(5000)
             for c in ctx.cookies():
                 dom = (c.get("domain") or "").lower()
                 if "douyin" not in dom:

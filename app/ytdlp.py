@@ -257,8 +257,22 @@ def _js_runtimes_cli() -> list[str]:
     return []
 
 
+def _douyin_ytdlp_network_cli(url: str) -> list[str]:
+    """抖音 aweme web API 对 TLS/指纹敏感；curl_cffi 已安装时启用 impersonate。"""
+    if "douyin.com" not in (url or "").lower():
+        return []
+    opts: list[str] = ["--add-headers", "Referer:https://www.douyin.com/"]
+    try:
+        import curl_cffi  # noqa: F401
+
+        opts.extend(["--impersonate", "chrome131"])
+    except ImportError:
+        pass
+    return opts
+
+
 def _ytdlp_cookie_cli(url: str, tmp_cleanup: list[Path]) -> list[str]:
-    """抖音：优先合并访客自动 Cookie + 用户 cookies.txt；其它站点沿用原逻辑。"""
+    """抖音：拉取访客 Cookie 后与用户 cookies.txt 合并。合并时访客在前，避免旧 s_v_web_id 覆盖新会话。"""
     u = url.lower()
     if "douyin.com" in u and config.DOUYIN_GUEST_COOKIES:
         try:
@@ -273,7 +287,7 @@ def _ytdlp_cookie_cli(url: str, tmp_cleanup: list[Path]) -> list[str]:
                     os.close(fd2)
                     mp = Path(merged_p)
                     tmp_cleanup.append(mp)
-                    merge_netscape_cookie_files(user_p, gp, mp)
+                    merge_netscape_cookie_files(gp, user_p, mp)
                     return ["--cookies", str(mp)]
                 return ["--cookies", str(gp)]
         except OSError:
@@ -291,6 +305,7 @@ def _ytdlp_cookie_cli(url: str, tmp_cleanup: list[Path]) -> list[str]:
 def _global_ytdlp_opts(url: str, tmp_cleanup: list[Path]) -> list[str]:
     opts: list[str] = ["--no-playlist"]
     opts.extend(_ytdlp_cookie_cli(url, tmp_cleanup))
+    opts.extend(_douyin_ytdlp_network_cli(url))
     opts.extend(_js_runtimes_cli())
 
     if config.YTDLP_EXTRACTOR_ARGS:
