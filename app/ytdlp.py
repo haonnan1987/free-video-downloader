@@ -312,6 +312,12 @@ _DOUYIN_COOKIE_GUIDANCE = (
     "访客不必安装扩展或导出 Cookie；站长可选在 cookies/cookies.txt 增加访客态条目以提升稳定性。"
 )
 
+# YouTube 机器人校验（与 _friendly_fail_message 共用，供按域名纠偏）
+_YOUTUBE_BOT_GUIDANCE = (
+    "【YouTube】触发机器人校验或需登录。请将已登录账号的 youtube.com Cookie 写入 cookies/cookies.txt（或设置 YTDLP_COOKIES_FILE），"
+    "或在 .env 配置 POT_PROVIDER_URL 配合 bgutil-ytdlp-pot-provider；并确认已执行 pip install \"yt-dlp[default]\" 且 PATH 中有 Node/Deno。"
+)
+
 # 历史/第三方返回的「必须浏览器扩展导出」类文案（仓库内可能已无源字符串，部署或 Cobalt 仍可能带回）
 _LEGACY_DOUYIN_COOKIE_UI_MARKERS = (
     "抖音需要",
@@ -325,6 +331,42 @@ _LEGACY_DOUYIN_COOKIE_UI_MARKERS = (
     "导出 douyin.com",
     "douyin.com 的 cookies",
 )
+
+
+def _is_youtube_url(url: str) -> bool:
+    u = url.lower()
+    return "youtube.com" in u or "youtu.be" in u
+
+
+def _stderr_looks_like_youtube_extractor(stderr: str) -> bool:
+    low = (stderr or "").lower()
+    return "[youtube]" in low or "youtube.com/" in low or "youtu.be/" in low
+
+
+def _stderr_looks_like_youtube_bot(stderr: str) -> bool:
+    """仅当明确为 yt-dlp 的 YouTube 报错时再出【YouTube】文案，避免页面 HTML 里误含 youtube 字样。"""
+    low = (stderr or "").lower()
+    if not low:
+        return False
+    if "sign in to confirm you" in low and "not a bot" in low:
+        return True
+    if "not a bot" in low and _stderr_looks_like_youtube_extractor(stderr):
+        return True
+    return False
+
+
+def _enforce_error_matches_request_url(url: str, detail: str) -> str:
+    """按当前链接域名收敛提示，避免抖音链误配【YouTube】长文或两段说明叠在一起。"""
+    host = (urlparse(url or "").hostname or "").lower()
+    if not host or not detail:
+        return detail
+    douyin_host = "douyin" in host
+    yt = _is_youtube_url(url)
+    if douyin_host and "【YouTube】" in detail:
+        return _DOUYIN_COOKIE_GUIDANCE
+    if yt and "抖音暂无法解析" in detail and "【YouTube】" not in detail:
+        return _YOUTUBE_BOT_GUIDANCE
+    return detail
 
 
 def sanitize_douyin_resolve_user_detail(url: str, detail: str) -> str:
@@ -376,15 +418,8 @@ def _friendly_fail_message(stderr: str) -> str:
     )
     if douyin_ctx and cookieish:
         return _DOUYIN_COOKIE_GUIDANCE
-    if "sign in to confirm" in low or (
-        "not a bot" in low and ("[youtube]" in low or "youtube" in low)
-    ):
-        return (
-            "【YouTube】触发机器人校验或需登录。"
-            "请将已登录账号的 youtube.com Cookie 写入 cookies/cookies.txt（或设置 YTDLP_COOKIES_FILE），"
-            "或在 .env 配置 POT_PROVIDER_URL 配合 bgutil-ytdlp-pot-provider；"
-            "并确认已执行 pip install \"yt-dlp[default]\" 且 PATH 中有 Node/Deno。"
-        )
+    if _stderr_looks_like_youtube_bot(text):
+        return _YOUTUBE_BOT_GUIDANCE
     if "sign in" in low or "not a bot" in low:
         return "该平台要求验证身份，暂时无法解析此链接"
     if "no supported javascript runtime" in low or "js runtime" in low:
@@ -412,23 +447,15 @@ def _friendly_fail_message(stderr: str) -> str:
     return _GENERIC_RESOLVE_FAIL
 
 
-def _is_youtube_url(url: str) -> bool:
-    u = url.lower()
-    return "youtube.com" in u or "youtu.be" in u
-
-
 def _url_platform_hint(url: str) -> str:
     u = (url or "").lower()
     if "douyin.com" in u:
-        return "提示：访客无需登录或导出 Cookie。服务端会用 curl_cffi、无头 Chromium 等自动生成访客会话；失败时可由站长可选配置 cookies/cookies.txt 并重建镜像。"
+        return "提示：访客无需导出 Cookie；失败时可选用 cookies/cookies.txt 或重建镜像。"
     if "xiaohongshu.com" in u:
         return "提示：小红书可尝试配置 xiaohongshu.com 的 cookies.txt，或使用标准笔记链接。"
     if "youtube.com" in u or "youtu.be" in u:
-        pot = "已配置 PoToken 服务时保持 POT_PROVIDER_URL。" if config.POT_PROVIDER_URL else ""
-        return (
-            f"提示：YouTube 建议安装依赖 yt-dlp[default]（含 yt-dlp-ejs）、系统 PATH 中有 Node。"
-            f"{pot}仍提示机器人校验时请使用 cookies/cookies.txt。"
-        )
+        pot = "已设 POT_PROVIDER_URL 时保持即可。" if config.POT_PROVIDER_URL else ""
+        return f"提示：安装 yt-dlp[default] 与 Node；{pot}机器人校验时请用 cookies/cookies.txt。"
     if "bilibili.com" in u or "b23.tv" in u:
         return "提示：B 站 412 或风控时可尝试在 cookies.txt 中配置登录态。"
     if "tiktok.com" in u:
@@ -441,10 +468,14 @@ def public_resolve_error_detail(original_url: str, exc: YtDlpError | None) -> st
     if exc is None:
         h = _url_platform_hint(original_url)
         out = f"{_GENERIC_RESOLVE_FAIL} {h}" if h else _GENERIC_RESOLVE_FAIL
-        return sanitize_douyin_resolve_user_detail(original_url, out)
+        return sanitize_douyin_resolve_user_detail(
+            original_url, _enforce_error_matches_request_url(original_url, out)
+        )
     msg = str(exc)
     if any(x in msg for x in ("仅支持 http", "链接过长", "无效的链接", "不允许访问")):
-        return sanitize_douyin_resolve_user_detail(original_url, msg)
+        return sanitize_douyin_resolve_user_detail(
+            original_url, _enforce_error_matches_request_url(original_url, msg)
+        )
     raw = (exc.stderr or "").strip()
     # 同时看 yt-dlp 输出与异常文案，避免 stderr 为空时仍把旧版「浏览器扩展」提示原样返回
     blob = f"{raw}\n{msg}".strip()
@@ -455,11 +486,12 @@ def public_resolve_error_detail(original_url: str, exc: YtDlpError | None) -> st
         h = _url_platform_hint(original_url)
         if h:
             detail = f"{detail} {h}"
-    u = (original_url or "").lower()
-    if "douyin.com" in u:
+    host = (urlparse(original_url or "").hostname or "").lower()
+    if host and "douyin" in host:
         tail = f"{blob}\n{detail}".lower()
         if any(s in tail for s in ("浏览器扩展", "get cookies.txt", "有效的网页", "cclelndahbckbenkjhflpdbgdldlbecc")):
             detail = _DOUYIN_COOKIE_GUIDANCE
+    detail = _enforce_error_matches_request_url(original_url, detail)
     return sanitize_douyin_resolve_user_detail(original_url, detail)
 
 

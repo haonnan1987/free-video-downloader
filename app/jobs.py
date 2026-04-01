@@ -124,8 +124,6 @@ async def run_download_job(job: Job, *, use_cobalt: bool = False) -> None:
     except (YtDlpError, CobaltError) as e:
         if isinstance(e, YtDlpError):
             err_msg = public_resolve_error_detail(job.url, e)
-            if e.stderr and "【YouTube】" not in err_msg and len(e.stderr) > 50:
-                err_msg = f"{err_msg}（{e.stderr[-400:]}）"
         else:
             err_msg = str(e)
         await store.update(job.id, status="failed", error=err_msg[:2000])
