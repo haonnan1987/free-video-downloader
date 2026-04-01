@@ -119,17 +119,20 @@ function _needsHotlinkThumbProxy(url) {
   if (typeof url !== "string") return false;
   try {
     const h = new URL(url.startsWith("//") ? `https:${url}` : url).hostname.toLowerCase();
+    const igFbcdn = h.endsWith(".fbcdn.net") && h.includes("instagram");
     return (
       h.endsWith(".hdslb.com") ||
       h.endsWith(".biliimg.com") ||
       h.includes("douyinpic.com") ||
       h.endsWith(".twimg.com") ||
       h === "twimg.com" ||
+      h.includes("cdninstagram.com") ||
+      igFbcdn ||
       (h.endsWith(".byteimg.com") && url.toLowerCase().includes("douyin")) ||
       _isXhsThumbCdnHost(h)
     );
   } catch {
-    return /hdslb\.com|biliimg\.com|douyinpic\.com|twimg\.com|xhscdn\.(com|net)|picasso-static\.|\.qimg\.|sns-/i.test(
+    return /hdslb\.com|biliimg\.com|douyinpic\.com|twimg\.com|cdninstagram\.com|instagram.*fbcdn|xhscdn\.(com|net)|picasso-static\.|\.qimg\.|sns-/i.test(
       url
     );
   }

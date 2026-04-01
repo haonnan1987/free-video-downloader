@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import html
 import logging
 import mimetypes
 import re
@@ -140,6 +141,73 @@ def _twitter_syndication_thumbnail(page_url: str) -> str | None:
     return None
 
 
+_IG_OG_IMAGE_RES = (
+    re.compile(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', re.I),
+    re.compile(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', re.I),
+    re.compile(
+        r'<meta[^>]+property=["\']og:image:secure_url["\'][^>]+content=["\']([^"\']+)["\']',
+        re.I,
+    ),
+)
+_IG_OG_TITLE_RES = (
+    re.compile(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']', re.I),
+    re.compile(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']', re.I),
+)
+
+_IG_PAGE_HEADERS = {
+    "User-Agent": _THUMB_PROXY_UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Cache-Control": "no-cache",
+}
+
+
+def _instagram_og_meta(page_url: str) -> dict[str, str | None]:
+    """Instagram 未开放无令牌 oEmbed；从作品页 HTML 取 og:image / 内嵌 JSON 缩略图。"""
+    out: dict[str, str | None] = {"title": None, "thumbnail": None}
+    u = (page_url or "").strip()
+    if "instagram.com" not in u.lower():
+        return out
+    try:
+        with httpx.Client(timeout=24, follow_redirects=True, headers=_IG_PAGE_HEADERS) as c:
+            r = c.get(u, headers={**_IG_PAGE_HEADERS, "Referer": "https://www.instagram.com/"})
+        if r.status_code >= 400:
+            return out
+        body = r.text
+    except Exception:
+        return out
+    for rx in _IG_OG_IMAGE_RES:
+        m = rx.search(body)
+        if m:
+            raw = html.unescape(m.group(1).strip())
+            if raw.startswith("//"):
+                raw = "https:" + raw
+            if raw.startswith("http"):
+                out["thumbnail"] = raw
+            break
+    if not out["thumbnail"]:
+        m = re.search(r'"thumbnail_src"\s*:\s*"((?:https?:)?\\u002F\\u002F[^"]+)"', body)
+        if not m:
+            m = re.search(r'"thumbnail_src"\s*:\s*"(https:\\/\\/[^"]+)"', body)
+        if not m:
+            m = re.search(r'"thumbnail_src"\s*:\s*"(https:[^"]+)"', body)
+        if m:
+            thumb = m.group(1).replace("\\u002F", "/").replace("\\/", "/")
+            if thumb.startswith("http"):
+                out["thumbnail"] = thumb
+    for rx in _IG_OG_TITLE_RES:
+        m = rx.search(body)
+        if m:
+            t = html.unescape(m.group(1).strip())
+            if t:
+                out["title"] = t
+            break
+    return out
+
+
 def _sniff_image_media_type(body: bytes) -> str | None:
     if len(body) >= 3 and body[:3] == b"\xff\xd8\xff":
         return "image/jpeg"
@@ -199,6 +267,8 @@ def _needs_thumbnail_proxy(host: str) -> bool:
         or _is_xhs_thumbnail_cdn_host(h)
         or "douyinpic.com" in h
         or "twimg.com" in h
+        or "cdninstagram.com" in h
+        or (h.endswith(".fbcdn.net") and "instagram" in h)
     )
 
 
@@ -264,6 +334,11 @@ async def _resolve_embed_hotlink_thumbnail(payload: dict) -> dict:
             return payload
         headers["Referer"] = "https://x.com/"
         headers["Origin"] = "https://x.com"
+    elif "cdninstagram.com" in host or (host.endswith(".fbcdn.net") and "instagram" in host):
+        if "instagram.com" not in w and "instagram" not in ex:
+            return payload
+        headers["Referer"] = "https://www.instagram.com/"
+        headers["Origin"] = "https://www.instagram.com"
     else:
         return payload
 
@@ -303,6 +378,13 @@ async def finalize_resolve_payload(payload: dict) -> dict:
         t = await asyncio.to_thread(_twitter_syndication_thumbnail, wu)
         if t:
             p["thumbnail"] = t
+    if wu and "instagram.com" in wu.lower() and not (p.get("thumbnail") or "").strip():
+        ig = await asyncio.to_thread(_instagram_og_meta, wu)
+        if ig.get("thumbnail"):
+            p["thumbnail"] = ig["thumbnail"]
+        ct = (p.get("title") or "").strip()
+        if ig.get("title") and (not ct or ct in ("视频", "未命名")):
+            p["title"] = ig["title"]
     p = _with_proxied_thumbnail(p)
     return await _resolve_embed_hotlink_thumbnail(p)
 
@@ -416,6 +498,9 @@ async def _thumb_proxy_fetch(raw: str) -> Response:
     elif "twimg.com" in host:
         headers["Referer"] = "https://x.com/"
         headers["Origin"] = "https://x.com"
+    elif "cdninstagram.com" in host or (host.endswith(".fbcdn.net") and "instagram" in host):
+        headers["Referer"] = "https://www.instagram.com/"
+        headers["Origin"] = "https://www.instagram.com"
 
     try:
         async with httpx.AsyncClient(
@@ -469,7 +554,6 @@ _OEMBED_ENDPOINTS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(youtube\.com/|youtu\.be/)", re.I), "https://www.youtube.com/oembed?url={url}&format=json"),
     (re.compile(r"(twitter\.com/|x\.com/)", re.I), "https://publish.twitter.com/oembed?url={url}"),
     (re.compile(r"vimeo\.com/", re.I), "https://vimeo.com/api/oembed.json?url={url}"),
-    (re.compile(r"instagram\.com/", re.I), "https://graph.facebook.com/v18.0/instagram_oembed?url={url}&access_token=IGQVJ"),
     (re.compile(r"dailymotion\.com/", re.I), "https://www.dailymotion.com/services/oembed?url={url}&format=json"),
 ]
 
@@ -546,6 +630,13 @@ async def _cobalt_resolve_response(url: str, cb: dict) -> dict:
             thumb = oembed["thumbnail"]
         if not title and oembed["title"]:
             title = oembed["title"]
+    if "instagram.com" in url.lower():
+        if not thumb or not title:
+            ig = await asyncio.to_thread(_instagram_og_meta, url)
+            if not thumb and ig.get("thumbnail"):
+                thumb = ig["thumbnail"]
+            if not title and ig.get("title"):
+                title = ig["title"]
 
     payload = await finalize_resolve_payload(
         {
@@ -590,6 +681,7 @@ async def _cobalt_resolve_response(url: str, cb: dict) -> dict:
         if (
             "xiaohongshu.com" in lowu
             or "douyin.com" in lowu
+            or "instagram.com" in lowu
             or _is_twitter_x_page_url(url)
         ):
             enriched = False
