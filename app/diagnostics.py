@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import shutil
-from pathlib import Path
 
 from app import config
 from app.cobalt import check_cobalt_sync as _check_cobalt
@@ -9,7 +8,7 @@ from app.ytdlp import _js_runtimes_cli
 
 
 def get_diagnostics() -> dict:
-    cookies_file = Path(config.YTDLP_COOKIES_FILE).expanduser() if config.YTDLP_COOKIES_FILE else None
+    cookies_file = config.resolved_ytdlp_cookies_file()
     cookies_file_ok = bool(cookies_file and cookies_file.is_file())
     browser = bool(config.YTDLP_COOKIES_FROM_BROWSER)
     ffmpeg_ok = bool(shutil.which("ffmpeg"))
@@ -34,7 +33,7 @@ def get_diagnostics() -> dict:
             "请在 .env 设置 YTDLP_COOKIES_FROM_BROWSER=chrome 或提供有效的 YTDLP_COOKIES_FILE。"
             "抖音默认由服务端自动生成访客 Cookie（DOUYIN_GUEST_COOKIES / DOUYIN_PLAYWRIGHT），不要求访客提供文件。"
         )
-    elif cookies_file and config.YTDLP_COOKIES_FILE and not cookies_file_ok:
+    elif config.YTDLP_COOKIES_FILE and not cookies_file_ok:
         issues.append("YTDLP_COOKIES_FILE 路径不存在或不可读")
     if not js_effective:
         issues.append("未检测到 node/deno/bun（或未设置 YTDLP_JS_RUNTIMES），YouTube 容易解析失败")
@@ -59,7 +58,7 @@ def get_diagnostics() -> dict:
         "douyin_playwright": config.DOUYIN_PLAYWRIGHT,
         "playwright_python_package": playwright_pkg,
         "cookies_from_browser_configured": browser,
-        "cookies_file_configured": bool(config.YTDLP_COOKIES_FILE),
+        "cookies_file_configured": bool(config.YTDLP_COOKIES_FILE or cookies_file_ok),
         "cookies_file_exists": cookies_file_ok,
         "ffmpeg_in_path": ffmpeg_ok,
         "ffprobe_in_path": ffprobe_ok,

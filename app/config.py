@@ -45,6 +45,18 @@ DOUYIN_PLAYWRIGHT = os.environ.get(
 
 # yt-dlp 可选增强（YouTube 常见问题见 README）
 YTDLP_COOKIES_FILE = os.environ.get("YTDLP_COOKIES_FILE", "").strip()
+COOKIES_TXT_DEFAULT = BASE_DIR / "cookies" / "cookies.txt"
+
+
+def resolved_ytdlp_cookies_file() -> Path | None:
+    """优先环境变量路径；否则使用项目内 cookies/cookies.txt（若存在）。"""
+    if YTDLP_COOKIES_FILE:
+        p = Path(YTDLP_COOKIES_FILE).expanduser()
+        return p if p.is_file() else None
+    p = COOKIES_TXT_DEFAULT
+    return p if p.is_file() else None
+
+
 YTDLP_COOKIES_FROM_BROWSER = os.environ.get("YTDLP_COOKIES_FROM_BROWSER", "").strip()
 YTDLP_JS_RUNTIMES = os.environ.get("YTDLP_JS_RUNTIMES", "").strip()
 YTDLP_EXTRACTOR_ARGS = os.environ.get("YTDLP_EXTRACTOR_ARGS", "").strip()

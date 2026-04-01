@@ -34,10 +34,14 @@ _log = logging.getLogger("uvicorn.error")
 
 
 def _prefer_ytdlp_before_cobalt(url: str) -> bool:
-    """这些站点在 Cobalt 之前优先 yt-dlp。抖音与 TikTok 一样先 Cobalt，失败再用 yt-dlp（并带访客 Cookie 补强）。"""
+    """这些站点解析与下载一律优先 yt-dlp（https://github.com/yt-dlp/yt-dlp 原生支持更稳）；Cobalt 仅作其它站的备用。"""
     host = (urlparse(url.strip()).hostname or "").lower()
     if not host:
         return False
+    if "douyin.com" in host:
+        return True
+    if "youtube.com" in host or host == "youtu.be":
+        return True
     if "xiaohongshu.com" in host:
         return True
     if host == "b23.tv" or host.endswith(".b23.tv"):

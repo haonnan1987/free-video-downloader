@@ -168,9 +168,28 @@ def _expand_douyin_url(url: str) -> str:
     return u
 
 
+def _expand_iesdouyin_url(url: str) -> str:
+    """部分分享域名为 iesdouyin.com，跟随后跳到 www.douyin.com/video/{id}。"""
+    u = url.strip()
+    if "iesdouyin.com" not in u.lower():
+        return u
+    try:
+        hdrs = {**_DOUYIN_UA_HEADERS, "Referer": "https://www.douyin.com/"}
+        with httpx.Client(timeout=30, follow_redirects=True) as c:
+            r = c.get(u, headers=hdrs)
+        final = str(r.url)
+        vm = re.search(r"(?:www\.)?douyin\.com/video/(\d+)", final, re.I)
+        if vm:
+            return f"https://www.douyin.com/video/{vm.group(1)}"
+    except Exception:
+        pass
+    return u
+
+
 def normalize_fetch_url(url: str) -> str:
     """解析/下载前统一规范化（YouTube 单视频、B 站 av、抖音短链等）。"""
     u = _normalize_url(url.strip())
+    u = _expand_iesdouyin_url(u)
     u = _expand_douyin_url(u)
     u = _bilibili_bv_to_av_url(u)
     return u
@@ -248,7 +267,7 @@ def _ytdlp_cookie_cli(url: str, tmp_cleanup: list[Path]) -> list[str]:
             gp = Path(guest_p)
             tmp_cleanup.append(gp)
             if fetch_guest_cookie_file(url, gp):
-                user_p = Path(config.YTDLP_COOKIES_FILE).expanduser() if config.YTDLP_COOKIES_FILE else None
+                user_p = config.resolved_ytdlp_cookies_file()
                 if user_p and user_p.is_file():
                     fd2, merged_p = tempfile.mkstemp(suffix=".txt", prefix="dy_merged_")
                     os.close(fd2)
@@ -261,10 +280,9 @@ def _ytdlp_cookie_cli(url: str, tmp_cleanup: list[Path]) -> list[str]:
             pass
 
     out: list[str] = []
-    if config.YTDLP_COOKIES_FILE:
-        cpath = Path(config.YTDLP_COOKIES_FILE).expanduser()
-        if cpath.is_file():
-            out.extend(["--cookies", str(cpath)])
+    cpath = config.resolved_ytdlp_cookies_file()
+    if cpath and cpath.is_file():
+        out.extend(["--cookies", str(cpath)])
     if config.YTDLP_COOKIES_FROM_BROWSER:
         out.extend(["--cookies-from-browser", config.YTDLP_COOKIES_FROM_BROWSER])
     return out
@@ -358,6 +376,15 @@ def _friendly_fail_message(stderr: str) -> str:
     )
     if douyin_ctx and cookieish:
         return _DOUYIN_COOKIE_GUIDANCE
+    if "sign in to confirm" in low or (
+        "not a bot" in low and ("[youtube]" in low or "youtube" in low)
+    ):
+        return (
+            "【YouTube】触发机器人校验或需登录。"
+            "请将已登录账号的 youtube.com Cookie 写入 cookies/cookies.txt（或设置 YTDLP_COOKIES_FILE），"
+            "或在 .env 配置 POT_PROVIDER_URL 配合 bgutil-ytdlp-pot-provider；"
+            "并确认已执行 pip install \"yt-dlp[default]\" 且 PATH 中有 Node/Deno。"
+        )
     if "sign in" in low or "not a bot" in low:
         return "该平台要求验证身份，暂时无法解析此链接"
     if "no supported javascript runtime" in low or "js runtime" in low:
@@ -397,7 +424,11 @@ def _url_platform_hint(url: str) -> str:
     if "xiaohongshu.com" in u:
         return "提示：小红书可尝试配置 xiaohongshu.com 的 cookies.txt，或使用标准笔记链接。"
     if "youtube.com" in u or "youtu.be" in u:
-        return "提示：YouTube 若遇机器人验证，请将 youtube.com 的 cookies.txt 放入 cookies/。"
+        pot = "已配置 PoToken 服务时保持 POT_PROVIDER_URL。" if config.POT_PROVIDER_URL else ""
+        return (
+            f"提示：YouTube 建议安装依赖 yt-dlp[default]（含 yt-dlp-ejs）、系统 PATH 中有 Node。"
+            f"{pot}仍提示机器人校验时请使用 cookies/cookies.txt。"
+        )
     if "bilibili.com" in u or "b23.tv" in u:
         return "提示：B 站 412 或风控时可尝试在 cookies.txt 中配置登录态。"
     if "tiktok.com" in u:
@@ -436,6 +467,36 @@ def public_resolve_error_detail(original_url: str, exc: YtDlpError | None) -> st
 _FORMAT_FALLBACK = (
     "bv*+ba/bestvideo*+bestaudio/bestvideo+bestaudio/bv+ba/best/worst"
 )
+# 抖音多为单文件进度流，优先 best，减少无分轨时强行走 ffmpeg 合并的失败率
+_FORMAT_DOUYIN = "best/bestvideo*+bestaudio/bv*+ba/b/worst"
+
+
+def _format_chain_for_url(url: str) -> str:
+    u = (url or "").lower()
+    if "douyin.com" in u:
+        return _FORMAT_DOUYIN
+    return _FORMAT_FALLBACK
+
+
+def _youtube_extra_cli_batches() -> list[list[str]]:
+    """在默认 player_client 仍触发风控时，按序换用内置客户端（与 yt-dlp 官方建议一致）。"""
+    return [
+        [],
+        ["--extractor-args", "youtube:player_client=tv_embedded,android_sdkless"],
+        ["--extractor-args", "youtube:player_client=web_embedded,android_vr"],
+    ]
+
+
+def _youtube_should_retry_other_clients(stderr: str) -> bool:
+    t = (stderr or "").lower()
+    if "[youtube]" not in t and "youtube.com" not in t:
+        return False
+    return (
+        "sign in to confirm" in t
+        or "not a bot" in t
+        or "login required" in t
+        or ("po token" in t and "required" in t)
+    )
 
 _MEDIA_EXTS = frozenset({
     ".mp4",
@@ -506,35 +567,45 @@ def fetch_metadata(url: str) -> dict[str, Any]:
     validate_public_url(url)
     tmp_cookie_files: list[Path] = []
     try:
-        cmd = [
-            *_ytdlp_cmd(),
-            *_global_ytdlp_opts(url, tmp_cookie_files),
-            "-f",
-            _FORMAT_FALLBACK,
-            "-J",
-            "--skip-download",
-            "--no-warnings",
-            url,
-        ]
-        try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=config.RESOLVE_TIMEOUT,
-                check=False,
-                **_SUBPROC_TEXT,
-            )
-        except subprocess.TimeoutExpired as e:
-            raise YtDlpError("解析超时，请稍后重试或换一条链接") from e
-        if proc.returncode != 0:
-            err = _ytdlp_subprocess_error_text(proc) or "(yt-dlp 无输出)"
-            raise YtDlpError(_friendly_fail_message(err), stderr=err)
-        try:
-            data: dict[str, Any] = json.loads(proc.stdout)
-        except json.JSONDecodeError as e:
-            raise YtDlpError("解析返回异常") from e
-        return data
+        base_opts = _global_ytdlp_opts(url, tmp_cookie_files)
+        fmt_chain = _format_chain_for_url(url)
+        batches: list[list[str]] = (
+            _youtube_extra_cli_batches() if _is_youtube_url(url) else [[]]
+        )
+        last_err = ""
+        proc: Any = None
+        for extra in batches:
+            cmd = [
+                *_ytdlp_cmd(),
+                *base_opts,
+                *extra,
+                "-f",
+                fmt_chain,
+                "-J",
+                "--skip-download",
+                "--no-warnings",
+                url,
+            ]
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=config.RESOLVE_TIMEOUT,
+                    check=False,
+                    **_SUBPROC_TEXT,
+                )
+            except subprocess.TimeoutExpired as e:
+                raise YtDlpError("解析超时，请稍后重试或换一条链接") from e
+            if proc.returncode == 0:
+                try:
+                    return json.loads(proc.stdout)
+                except json.JSONDecodeError as e:
+                    raise YtDlpError("解析返回异常") from e
+            last_err = _ytdlp_subprocess_error_text(proc) or "(yt-dlp 无输出)"
+            if not _is_youtube_url(url) or not _youtube_should_retry_other_clients(last_err):
+                break
+        raise YtDlpError(_friendly_fail_message(last_err), stderr=last_err)
     finally:
         for p in tmp_cookie_files:
             try:
@@ -686,50 +757,57 @@ def download_to_dir(
         else:
             fmt = format_spec
     elif not format_spec or format_spec in ("best", "cobalt"):
-        fmt = _FORMAT_FALLBACK
+        fmt = _format_chain_for_url(url)
     else:
         fmt = format_spec
 
     tmp_cookie_files: list[Path] = []
     try:
-        cmd = [*_ytdlp_cmd(), *_global_ytdlp_opts(url, tmp_cookie_files)]
-        if media_mode != "audio_only":
-            cmd.extend(["--merge-output-format", merge_container])
-        else:
-            # 仅音频：转码为 mp3（需 FFmpeg），避免仍是 m4a/webm 等「视频容器」
-            cmd.extend(["--extract-audio", "--audio-format", "mp3"])
-        cmd.extend(
-            [
-                "-f",
-                fmt,
-                "--restrict-filenames",
-                "--trim-filenames",
-                "100",
-                "--no-warnings",
-                "-o",
-                out_tmpl,
-                url,
-            ]
+        base_opts = _global_ytdlp_opts(url, tmp_cookie_files)
+        batches: list[list[str]] = (
+            _youtube_extra_cli_batches() if _is_youtube_url(url) else [[]]
         )
-        try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=config.DOWNLOAD_TIMEOUT,
-                check=False,
-                **_SUBPROC_TEXT,
+        last_err = ""
+        proc: Any = None
+        for extra in batches:
+            cmd = [*_ytdlp_cmd(), *base_opts, *extra]
+            if media_mode != "audio_only":
+                cmd.extend(["--merge-output-format", merge_container])
+            else:
+                cmd.extend(["--extract-audio", "--audio-format", "mp3"])
+            cmd.extend(
+                [
+                    "-f",
+                    fmt,
+                    "--restrict-filenames",
+                    "--trim-filenames",
+                    "100",
+                    "--no-warnings",
+                    "-o",
+                    out_tmpl,
+                    url,
+                ]
             )
-        except subprocess.TimeoutExpired as e:
-            raise YtDlpError("下载超时") from e
-        if proc.returncode != 0:
-            err = _ytdlp_subprocess_error_text(proc) or "(yt-dlp 无输出)"
-            raise YtDlpError(_friendly_fail_message(err) or "下载失败", stderr=err)
-
-        picked = _pick_latest_media_file(dest_dir)
-        if not picked:
-            raise YtDlpError("未找到输出文件")
-        return picked
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=config.DOWNLOAD_TIMEOUT,
+                    check=False,
+                    **_SUBPROC_TEXT,
+                )
+            except subprocess.TimeoutExpired as e:
+                raise YtDlpError("下载超时") from e
+            if proc.returncode == 0:
+                picked = _pick_latest_media_file(dest_dir)
+                if not picked:
+                    raise YtDlpError("未找到输出文件")
+                return picked
+            last_err = _ytdlp_subprocess_error_text(proc) or "(yt-dlp 无输出)"
+            if not _is_youtube_url(url) or not _youtube_should_retry_other_clients(last_err):
+                break
+        raise YtDlpError(_friendly_fail_message(last_err) or "下载失败", stderr=last_err)
     finally:
         for p in tmp_cookie_files:
             try:
