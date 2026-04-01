@@ -10,6 +10,7 @@ data/
 .idea/
 .vscode/
 .cursor/
+.vercel/
 
 # 勿提交 Cookie 与下载产物
 cookies/*.txt

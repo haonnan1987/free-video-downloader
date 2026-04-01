@@ -1,0 +1,10 @@
+.venv
+venv
+data
+pot-server
+.git
+__pycache__
+.cursor
+*.pyc
+.env
+cookies/*.txt

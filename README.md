@@ -44,7 +44,7 @@ docker-compose up -d
 python -m venv .venv
 .venv\Scripts\activate   # Windows
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:fastapi_app --reload --port 8000
 ```
 
 本地开发时如需 cobalt，可单独启动：
@@ -54,6 +54,18 @@ docker run -p 9000:9000 -e API_URL=http://localhost:9000 ghcr.io/imputnet/cobalt
 ```
 
 然后在 `.env` 中设置 `COBALT_API_URL=http://localhost:9000`。
+
+## 部署到 Vercel（实验性）
+
+本项目主要为 **Docker 长驻进程** 设计（yt-dlp、可选 Cobalt、大文件下载、长超时）。**Vercel Serverless 能力与上述场景不匹配**：单次请求超时短、无配套 Cobalt 容器、磁盘仅 `/tmp`、 bundle 体积受限，**解析/下载可能失败或不稳定**。
+
+仓库已做尽量兼容，避免 **500 / FUNCTION_INVOCATION_FAILED**：
+
+- `api/index.py` 作为唯一 ASGI 入口（`app` 变量名）
+- `vercel.json`：`installCommand` 使用精简的 `requirements-vercel.txt`（不含 Playwright），并把全站流量重写到 `/api/index`
+- `app/config.py`：检测到 `VERCEL=1` 时使用 `/tmp` 下载目录、关闭后台清理协程、默认关闭 `DOUYIN_PLAYWRIGHT`
+
+**推荐**：用 **Railway / Render / Fly.io / 任意 VPS + docker compose** 部署完整功能。若坚持用 Vercel，请接受功能受限并做好环境变量（如自托管 Cobalt 的 URL，若可达）。
 
 ## 托管到 GitHub
 

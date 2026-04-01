@@ -342,8 +342,12 @@ async def lifespan(app: FastAPI):
         pass
 
 
-app = FastAPI(title="Video Fetch", version="0.1.0", lifespan=lifespan)
-app.add_middleware(
+fastapi_app = FastAPI(
+    title="Video Fetch",
+    version="0.1.0",
+    **({"lifespan": lifespan} if not config.IS_VERCEL else {}),
+)
+fastapi_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
@@ -367,7 +371,7 @@ class ThumbProxyBody(BaseModel):
     url: str = Field(..., min_length=12, max_length=65536)
 
 
-@app.get("/api/diagnostics")
+@fastapi_app.get("/api/diagnostics")
 async def api_diagnostics():
     """自检 Cookie / FFmpeg / JS 运行时配置（不含密钥内容）。"""
     return get_diagnostics()
@@ -442,7 +446,7 @@ async def _thumb_proxy_fetch(raw: str) -> Response:
     )
 
 
-@app.get("/api/thumb")
+@fastapi_app.get("/api/thumb")
 async def api_thumb_proxy_get(
     url: str = Query(..., min_length=12, max_length=65536, description="原始缩略图 URL"),
 ):
@@ -450,7 +454,7 @@ async def api_thumb_proxy_get(
     return await _thumb_proxy_fetch(url)
 
 
-@app.post("/api/thumb")
+@fastapi_app.post("/api/thumb")
 async def api_thumb_proxy_post(body: ThumbProxyBody):
     """POST body 传完整封面 URL，避免查询串超长导致 <img> / 浏览器截断。"""
     return await _thumb_proxy_fetch(body.url)
@@ -601,7 +605,7 @@ async def _cobalt_resolve_response(url: str, cb: dict) -> dict:
     return payload
 
 
-@app.post("/api/resolve")
+@fastapi_app.post("/api/resolve")
 async def api_resolve(body: ResolveBody):
     has_cobalt = bool(config.COBALT_API_URL) and config.COBALT_ENABLED
 
@@ -670,7 +674,7 @@ async def api_resolve(body: ResolveBody):
         )
 
 
-@app.post("/api/download")
+@fastapi_app.post("/api/download")
 async def api_download(body: DownloadBody, background_tasks: BackgroundTasks):
     has_cobalt = bool(config.COBALT_API_URL) and config.COBALT_ENABLED
     use_cobalt = False
@@ -729,7 +733,7 @@ async def api_download(body: DownloadBody, background_tasks: BackgroundTasks):
     return {"job_id": job.id}
 
 
-@app.get("/api/jobs/{job_id}")
+@fastapi_app.get("/api/jobs/{job_id}")
 async def api_job_status(job_id: str):
     job = await store.get(job_id)
     if not job:
@@ -743,7 +747,7 @@ async def api_job_status(job_id: str):
     return payload
 
 
-@app.get("/api/jobs/{job_id}/file")
+@fastapi_app.get("/api/jobs/{job_id}/file")
 async def api_job_file(job_id: str):
     job = await store.get(job_id)
     if not job or job.status != "completed" or not job.file_path:
@@ -761,4 +765,4 @@ async def api_job_file(job_id: str):
 
 static_dir = Path(__file__).resolve().parent.parent / "static"
 if static_dir.is_dir():
-    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+    fastapi_app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
