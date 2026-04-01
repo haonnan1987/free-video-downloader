@@ -1,0 +1,35 @@
+services:
+  web:
+    build: .
+    shm_size: "1g"
+    ports:
+      - "8000:8000"
+    environment:
+      - COBALT_API_URL=http://cobalt:9000
+      - COBALT_ENABLED=true
+      - POT_PROVIDER_URL=http://pot-provider:4416
+      - YTDLP_COOKIES_FILE=/app/cookies/cookies.txt
+    volumes:
+      - downloads:/app/data/downloads
+      - ./cookies:/app/cookies:ro
+    depends_on:
+      cobalt:
+        condition: service_started
+      pot-provider:
+        condition: service_started
+    restart: unless-stopped
+
+  cobalt:
+    image: ghcr.io/imputnet/cobalt:10
+    environment:
+      - API_URL=http://cobalt:9000
+      - API_PORT=9000
+    restart: unless-stopped
+
+  pot-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    init: true
+    restart: unless-stopped
+
+volumes:
+  downloads:

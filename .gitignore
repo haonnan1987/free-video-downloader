@@ -1,0 +1,23 @@
+.env
+.env.local
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+data/
+.idea/
+.vscode/
+.cursor/
+
+# 勿提交 Cookie 与下载产物
+cookies/*.txt
+!cookies/.gitkeep
+
+# 目录内为独立 Git 仓库，避免嵌套仓库一并推送
+pot-server/
+
+*.log
+Thumbs.db
+.DS_Store

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>VideoFetch — 免费在线视频下载</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css?v=7" />
+  </head>
+  <body>
+    <div class="bg-glow" aria-hidden="true"></div>
+
+    <header class="header">
+      <div class="header-inner">
+        <a class="logo" href="/">
+          <span class="logo-icon">▶</span>
+          <span class="logo-text">VideoFetch</span>
+        </a>
+        <div class="header-right">
+          <span class="version-badge">v1.0</span>
+          <button type="button" class="icon-btn" id="btn-about" aria-label="使用说明">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="hero">
+        <h1 class="hero-title">
+          免费下载任意平台视频
+        </h1>
+        <p class="hero-sub">
+          粘贴链接，自动识别画质与格式。支持 YouTube、TikTok、Twitter/X、B站、Instagram 等 20+ 平台。
+        </p>
+
+        <form class="search-bar" id="form-resolve">
+          <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            type="url"
+            name="url"
+            id="input-url"
+            class="search-input"
+            placeholder="粘贴视频链接…"
+            autocomplete="off"
+            required
+          />
+          <button type="submit" class="search-btn" id="btn-resolve">
+            <span class="btn-text">解析</span>
+            <svg class="btn-spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+          </button>
+        </form>
+        <p class="hint" id="hint-msg"></p>
+      </section>
+
+      <section class="result-section" id="result-grid" hidden>
+        <div class="result-card">
+          <div class="result-media" id="card-thumb-wrap">
+            <img id="card-thumb" alt="" loading="eager" decoding="async" />
+            <div class="media-overlay">
+              <span class="duration-badge" id="card-duration"></span>
+            </div>
+          </div>
+          <div class="result-body">
+            <div class="result-info">
+              <h2 class="result-title" id="card-title">—</h2>
+              <p class="result-meta" id="card-meta"></p>
+              <div class="tag-row" id="card-tags"></div>
+            </div>
+
+            <div class="panel-block">
+              <div class="panel-heading"><span class="panel-accent" aria-hidden="true"></span>格式</div>
+              <div class="format-seg" role="group" aria-label="下载格式">
+                <button type="button" class="seg-btn active" data-mode="original">原画</button>
+                <button type="button" class="seg-btn" data-mode="video_only">仅视频</button>
+                <button type="button" class="seg-btn" data-mode="audio_only">仅音频</button>
+              </div>
+            </div>
+
+            <div class="panel-row-2">
+              <div class="panel-field">
+                <div class="panel-heading"><span class="panel-accent" aria-hidden="true"></span>编码</div>
+                <select id="select-encoding" class="format-select" aria-label="编码">
+                  <option value="auto">自动 (最佳)</option>
+                  <option value="mp4">MP4</option>
+                  <option value="webm">WebM</option>
+                </select>
+              </div>
+              <div class="panel-field">
+                <div class="panel-heading"><span class="panel-accent" aria-hidden="true"></span>画质</div>
+                <select id="select-format" class="format-select" aria-label="画质"></select>
+              </div>
+            </div>
+
+            <div class="size-row">
+              <span>完整大小: <strong id="size-full">—</strong></span>
+            </div>
+
+            <div class="result-actions">
+              <button type="button" class="download-btn download-btn-white" id="btn-download">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span id="btn-download-label">下载完整视频</span>
+              </button>
+            </div>
+            <p class="status" id="download-status"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="platforms">
+        <h2 class="section-label">支持平台</h2>
+        <div class="platform-grid">
+          <div class="platform-chip"><span class="chip-dot" style="background:#f00"></span>YouTube</div>
+          <div class="platform-chip"><span class="chip-dot" style="background:#000"></span>TikTok</div>
+          <div class="platform-chip"><span class="chip-dot" style="background:#25F4EE"></span>抖音</div>
+          <div class="platform-chip"><span class="chip-dot" style="background:#1da1f2"></span>Twitter/X</div>
+          <div class="platform-chip"><span class="chip-dot" style="background:#e4405f"></span>Instagram</div>
+          <div class="platform-chip"><span class="chip-dot" style="background:#fb7299"></span>B站</div>
+          <div class="platform-chip"><span class="chip-dot" style="background:#1ab7ea"></span>Vimeo</div>
+          <div class="platform-chip"><span class="chip-dot" style="background:#ff4500"></span>Reddit</div>
+          <div class="platform-chip"><span class="chip-dot" style="background:#6441a5"></span>Twitch</div>
+        </div>
+      </section>
+
+      <section class="faq">
+        <h2 class="section-label">常见问题</h2>
+        <div class="faq-list">
+          <details class="faq-item">
+            <summary>如何下载视频？</summary>
+            <p>复制视频页面的链接，粘贴到搜索框中，点击「解析」按钮。解析成功后选择需要的画质，点击「下载」即可。</p>
+          </details>
+          <details class="faq-item">
+            <summary>支持哪些平台？</summary>
+            <p>支持 YouTube、TikTok、抖音、Twitter/X、Instagram、B站、Vimeo、Reddit、Facebook、Twitch、Snapchat 等 20 多个平台。<strong>抖音：</strong>访客<strong>无需登录</strong>抖音，也<strong>无需</strong>自行提供或配置任何 Cookie。服务端会用 Cobalt、模拟浏览器 TLS（curl-cffi）、无头 Chromium（Playwright）等在服务器上自动生成访客会话；可选由站长增加 <code>cookies/cookies.txt</code> 以提高稳定性。</p>
+          </details>
+          <details class="faq-item">
+            <summary>抖音一定要每个用户都登录吗？</summary>
+            <p><strong>不需要。</strong>访客不用登录抖音，也不用导出 Cookie。部署镜像默认会在服务端自动获取访客态会话；若解析不稳定，站长可<strong>可选</strong>在服务器增加抖音域名的 <code>cookies.txt</code> 作补充。</p>
+          </details>
+          <details class="faq-item">
+            <summary>视频最高支持什么画质？</summary>
+            <p>取决于视频源平台。YouTube 最高可下载 4K (2160p)，其他平台取决于原始上传画质。</p>
+          </details>
+          <details class="faq-item">
+            <summary>为什么有些视频无法下载？</summary>
+            <p>可能是因为该视频设为私密、需要登录、存在地区限制、或平台进行了反爬虫检测。建议检查链接是否正确、视频是否公开可见。</p>
+          </details>
+          <details class="faq-item">
+            <summary>下载的文件在哪里？</summary>
+            <p>下载完成后浏览器会自动保存文件到你的默认下载目录。如果是手机端，可在文件管理器的「下载」文件夹中找到。</p>
+          </details>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>仅下载你有权获取的内容。禁止绕过 DRM、付费墙或侵犯他人版权。本项目以学习工程实现为主。</p>
+    </footer>
+
+    <aside class="drawer" id="drawer" hidden>
+      <div class="drawer-backdrop"></div>
+      <div class="drawer-panel">
+        <div class="drawer-header">
+          <h3>使用说明</h3>
+          <button type="button" class="drawer-close" id="drawer-close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="drawer-body">
+          <ol class="drawer-steps">
+            <li>复制浏览器地址栏里的视频页链接</li>
+            <li>粘贴到搜索框，点击「解析」</li>
+            <li>选择格式后点击「下载」</li>
+          </ol>
+          <div class="drawer-section">
+            <h4>合规声明</h4>
+            <p>请确认你对素材拥有权利或平台允许下载。</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <script src="/app.js?v=13" type="module"></script>
+  </body>
+</html>

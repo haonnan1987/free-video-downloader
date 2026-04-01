@@ -1,0 +1,11 @@
+FROM ghcr.io/imputnet/yt-session-generator:webserver
+
+# Docker root 用户修复：sandbox=False + Chromium 稳定性参数
+RUN sed -i \
+    's/await nodriver.start(headless=False,/await nodriver.start(headless=False, sandbox=False, browser_args=["--disable-dev-shm-usage", "--disable-gpu", "--no-first-run", "--disable-setuid-sandbox"],/' \
+    /app/potoken_generator/extractor.py && \
+    grep -q 'sandbox=False' /app/potoken_generator/extractor.py && \
+    echo "Patch applied successfully"
+
+# 增加共享内存大小（Chromium 默认 /dev/shm 过小会崩溃）
+ENV SHM_SIZE=256m
